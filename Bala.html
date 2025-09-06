@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DApp Storage</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+    h2, h3 { color: #fff; }
+    .btn {
+      padding: 8px 14px;
+      margin: 6px;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 14px;
+      transition: 0.3s;
+    }
+    .btn:hover { background: #2563eb; }
+    .container { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; }
+    .card {
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 12px;
+      border-radius: 10px;
+      background: #161b22;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.4);
+      flex: 1 1 250px;
+      max-width: 320px;
+    }
+    .stored-card {
+      position: relative;
+      padding: 12px;
+      border-radius: 12px;
+      background: #161b22;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stored-image, video, audio {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+    .stored-text {
+      background: rgba(255,255,255,0.05);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #e6edf3;
+    }
+    #storedItems {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-top: 15px;
+    }
+    #walletAddress { font-weight: bold; color: #3b82f6; }
+    #connStatus { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h2>📦 Decentralized Storage DApp</h2>
+  <button id="connectWallet" class="btn">Connect to Wallet</button>
+  <p id="walletAddress"></p>
+  <p id="connStatus">◻️ Not connected</p>
+
+  <h3>Upload Files</h3>
+  <div class="container">
+    <div class="card">
+      <label>Upload Image:</label>
+      <input type="file" id="imageInput" accept="image/*">
+      <button class="btn" onclick="handleUpload('imageInput','image')">Upload</button>
+    </div>
+    <div class="card">
+      <label>Upload Text:</label>
+      <textarea id="textInput" placeholder="Enter text"></textarea>
+      <button class="btn" onclick="handleTextUpload()">Upload</button>
+    </div>
+    <div class="card">
+      <label>Upload Video:</label>
+      <input type="file" id="videoInput" accept="video/*">
+      <button class="btn" onclick="handleUpload('videoInput','video')">Upload</button>
+    </div>
+    <div class="card">
+      <label>Upload Audio:</label>
+      <input type="file" id="audioInput" accept="audio/*">
+      <button class="btn" onclick="handleUpload('audioInput','audio')">Upload</button>
+    </div>
+    <div class="card">
+      <label>Upload Document:</label>
+      <input type="file" id="docInput" accept=".pdf,.doc,.docx,.txt">
+      <button class="btn" onclick="handleUpload('docInput','document')">Upload</button>
+    </div>
+  </div>
+
+  <h3>My Stored Files</h3>
+  <button class="btn" onclick="handleViewItems()">View My Files</button>
+  <div id="storedItems"></div>
+
+<script>
+let web3, contract, userAccount;
+const contractABI = [
+  {"inputs":[{"internalType":"string","name":"_cid","type":"string"},{"internalType":"string","name":"_fileType","type":"string"}],
+   "name":"uploadFile","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"myFileCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],
+   "stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"_index","type":"uint256"}],
+   "name":"myFile","outputs":[{"internalType":"string","name":"","type":"string"},{"internalType":"string","name":"","type":"string"}],
+   "stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"_index","type":"uint256"}],
+   "name":"deleteMyFile","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
+
+// 🟦 Deploy pannina un Contract Address podanum
+const contractAddress = "0xE1f905511fdEb9B7cFdC8900ECfe998c28a0A336";
+
+// 🟩 Pinata Keys
+const PINATA_API_KEY = "30d2d7cfbf6204b6ee0f";
+const PINATA_SECRET  = "699aef360df3d641ee180234b659f18b72c08e05fb1984ce1137bce12c30d20c";
+
+function $(id){return document.getElementById(id);}
+function setConn(msg){$("connStatus").textContent = msg;}
+function fileUrlFromCID(cid){return `https://gateway.pinata.cloud/ipfs/${cid}`;}
+
+async function connectWallet(){
+  const provider = window.ethereum;
+  if(!provider){alert("Install MetaMask."); return;}
+  try{
+    const accounts = await provider.request({ method:'eth_requestAccounts' });
+    userAccount = accounts[0];
+    web3 = new Web3(provider);
+    contract = new web3.eth.Contract(contractABI, contractAddress);
+    $("walletAddress").textContent = `Connected: ${userAccount}`;
+    setConn("✅ Connected");
+  }catch(err){console.error(err); setConn("❌ Connection failed");}
+}
+$("connectWallet").onclick = connectWallet;
+
+async function uploadFileToIPFS(file){
+  const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(url,{method:"POST",headers:{
+    'pinata_api_key': PINATA_API_KEY,
+    'pinata_secret_api_key': PINATA_SECRET
+  },body:formData});
+  const jr = await res.json(); return jr.IpfsHash;
+}
+async function uploadJSONtoIPFS(jsonData){
+  const url="https://api.pinata.cloud/pinning/pinJSONToIPFS";
+  const res = await fetch(url,{method:"POST",headers:{
+    "Content-Type":"application/json",
+    'pinata_api_key': PINATA_API_KEY,
+    'pinata_secret_api_key': PINATA_SECRET
+  },body:JSON.stringify(jsonData)});
+  const jr=await res.json(); return jr.IpfsHash;
+}
+async function storeCID(cid,type){
+  await contract.methods.uploadFile(cid,type).send({from:userAccount});
+}
+async function handleUpload(inputId,type){
+  const input=$(inputId);
+  if(!input.files.length){alert("Select a file");return;}
+  const file=input.files[0];
+  const cid=await uploadFileToIPFS(file);
+  await storeCID(cid,type);
+  alert(type+" uploaded successfully!");
+}
+async function handleTextUpload(){
+  const text=$("textInput").value;
+  if(!text){alert("Enter text");return;}
+  const cid=await uploadJSONtoIPFS({message:text});
+  await storeCID(cid,"text");
+  alert("Text uploaded successfully!");
+}
+async function handleDelete(index){
+  try {
+    await contract.methods.deleteMyFile(index).send({from:userAccount});
+    alert("File deleted!");
+    handleViewItems();
+  } catch(err){
+    console.error(err);
+    alert("Delete failed!");
+  }
+}
+async function handleViewItems(){
+  const count=await contract.methods.myFileCount().call({from:userAccount});
+  const nodes=[];
+  for(let i=0;i<count;i++){
+    const [cid,ftype]=await contract.methods.myFile(i).call({from:userAccount});
+    const url=fileUrlFromCID(cid);
+    let content="";
+    if(ftype==="image") content=`<img class="stored-image" src="${url}">`;
+    else if(ftype==="video") content=`<video controls><source src="${url}"></video>`;
+    else if(ftype==="audio") content=`<audio controls src="${url}"></audio>`;
+    else if(ftype==="document") content=`<a href="${url}" target="_blank">📄 Open Document</a>`;
+    else if(ftype==="text"){
+      try{const jr=await (await fetch(url)).json();
+        content=`<div class="stored-text">${jr.message}</div>`;}
+      catch{content=`<div class="stored-text">[text item]</div>`;}
+    }
+    nodes.push(`
+      <div class="stored-card">
+        ${content}
+        <button class="btn" onclick="handleDelete(${i})">🗑 Delete</button>
+      </div>`);
+  }
+  $("storedItems").innerHTML=nodes.join('');
+}
+</script>
+</body>
+</html>
